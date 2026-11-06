@@ -1,0 +1,15 @@
+{
+  "name": "@opencode/harness",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Codebase Harness System - Isolated environments with codebase-specific tools and skills",
+  "main": "src/index.ts",
+  "scripts": {
+    "run": "bun run src/run.ts",
+    "build": "bun build src/index.ts --outdir dist --target node",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}
