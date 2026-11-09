@@ -19,22 +19,32 @@ import { sdkInstalls } from "~/lib/install-commands"
 
 const brand = {
   light: { open: "#626262", code: "#1f1f1f", inner: "#d2d2d2", text: "#333333", dim: "#737373", link: "#3b5cf6" },
-  dark: { open: "#aeaeae", code: "#eeeeee", inner: "#4b4b4b", text: "#c8c8c8", dim: "#8a8a8a", link: "#4f8bff" },
+  dark: { open: "#aeaeae", code: "#eeeeee", inner: "#4b4b4b", text: "#c8c8c8", dim: "#8a8a8a", link: "#6b8fff" },
 }
 const mono = "font-family: ui-monospace, Menlo, Consolas, monospace;"
 const buildLabels: Record<string, string> = {
   "darwin-aarch64-dmg": "macOS (Apple Silicon)",
   "darwin-x64-dmg": "macOS (Intel)",
   "windows-x64-nsis": "Windows (x64)",
-  "linux-x64-deb": "Linux (.deb)",
-  "linux-x64-rpm": "Linux (.rpm)",
+  "windows-aarch64-nsis": "Windows (ARM64)",
+  "linux-x64-deb": "Linux (.deb, x64)",
+  "linux-aarch64-deb": "Linux (.deb, ARM64)",
+  "linux-x64-rpm": "Linux (.rpm, x64)",
+  "linux-aarch64-rpm": "Linux (.rpm, ARM64)",
+  "linux-x64-appimage": "Linux (AppImage, x64)",
+  "linux-aarch64-appimage": "Linux (AppImage, ARM64)",
 }
 const buildIds: Record<string, string> = {
   "darwin-aarch64-dmg": "mac-arm",
   "darwin-x64-dmg": "mac-intel",
   "windows-x64-nsis": "windows",
+  "windows-aarch64-nsis": "windows-arm",
   "linux-x64-deb": "deb",
+  "linux-aarch64-deb": "deb-arm",
   "linux-x64-rpm": "rpm",
+  "linux-aarch64-rpm": "rpm-arm",
+  "linux-x64-appimage": "appimage",
+  "linux-aarch64-appimage": "appimage-arm",
 }
 const liteQuitKey = "opencode-lite-quit"
 const docsTopics = [...docsPages, ...docsConfigure, ...docsProducts.filter((item) => item.label !== "V1")]
@@ -104,9 +114,19 @@ export function install() {
   // One OpenCode Lite at a time. Quitting it brings the greeting back, and stops it from starting on
   // its own in this browser (people who debug the site open DevTools all day) until opencode.try().
   let lite: Promise<{ stop: () => void }> | undefined
-  const startLite = () => {
-    lite ??= textjs<{ start: (options: { onExit: () => void }) => Promise<{ stop: () => void }> }>("lite").then((app) =>
+  const startLite = (reason?: string) => {
+    if (lite) return lite
+    // Lite takes a moment to download, and the visitor may click back into the page from DevTools
+    // meanwhile. Its keyboard needs to know that focus left the page (see src/lite.tsx). A DevTools
+    // shortcut counts at once, since DevTools takes focus as it opens.
+    let away = reason === "shortcut" || !document.hasFocus()
+    const blur = () => (away = true)
+    window.addEventListener("blur", blur)
+    lite = textjs<{
+      start: (options: { away: () => boolean; onExit: () => void }) => Promise<{ stop: () => void }>
+    }>("lite").then((app) =>
       app.start({
+        away: () => away,
         onExit: () => {
           lite = undefined
           localStorage.setItem(liteQuitKey, "1")
@@ -121,7 +141,7 @@ export function install() {
         },
       }),
     )
-    lite.catch(() => (lite = undefined))
+    lite.finally(() => window.removeEventListener("blur", blur)).catch(() => (lite = undefined))
     return lite
   }
 
@@ -287,10 +307,10 @@ export function install() {
     // Settings › Other › Console API removes window.opencode when it's turned off, and Lite may have
     // been started by hand and quit since this page loaded.
     const intent = textjs.onConsoleIntent(
-      () =>
+      (e) =>
         (window as { opencode?: unknown }).opencode === api &&
         !localStorage.getItem(liteQuitKey) &&
-        void startLite().catch(greetOnce),
+        void startLite(e.reason).catch(greetOnce),
       { engageSelector: false },
     )
     if (!intent.triggered) greetOnce()
